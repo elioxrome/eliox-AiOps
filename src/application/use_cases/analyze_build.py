@@ -1,15 +1,12 @@
 from typing import Protocol
 
 from src.application.models import BuildAnalysis
+from src.infrastructure.llm.base import BuildAnalyzer
 from src.infrastructure.llm.prompts import ANALYZE_BUILD_PROMPT
 
 
 class BuildLogProvider(Protocol):
     def get_build_log(self, job_name: str, build_number: int) -> str: ...
-
-
-class BuildAnalyzer(Protocol):
-    def analyze(self, prompt: str) -> BuildAnalysis: ...
 
 
 class AnalyzeBuildUseCase:

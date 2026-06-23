@@ -5,7 +5,7 @@ from src.application.models import (
     BuildStatus,
     ProcessingStatus,
 )
-from src.application.use_cases.analyze_build import BuildAnalyzer
+from src.infrastructure.llm.base import BuildAnalyzer
 from src.infrastructure.llm.prompts import ANALYZE_BUILD_PROMPT
 from src.infrastructure.persistence.build_repository import BuildRepository
 

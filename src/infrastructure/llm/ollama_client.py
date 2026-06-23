@@ -11,11 +11,17 @@ class OllamaClient:
         url: str,
         model: str = "qwen3:8b",
         timeout_seconds: float = 120.0,
+        temperature: float = 0.1,
+        context_tokens: int = 4_096,
+        max_output_tokens: int = 400,
         session: requests.Session | None = None,
     ) -> None:
         self.url = url.rstrip("/")
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.temperature = temperature
+        self.context_tokens = context_tokens
+        self.max_output_tokens = max_output_tokens
         self.session = session or requests.Session()
 
     def analyze(self, prompt: str) -> BuildAnalysis:
@@ -29,9 +35,9 @@ class OllamaClient:
                     "format": "json",
                     "think": False,
                     "options": {
-                        "temperature": 0.1,
-                        "num_ctx": 4_096,
-                        "num_predict": 400,
+                        "temperature": self.temperature,
+                        "num_ctx": self.context_tokens,
+                        "num_predict": self.max_output_tokens,
                     },
                 },
                 timeout=self.timeout_seconds,

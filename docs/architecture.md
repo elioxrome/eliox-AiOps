@@ -11,7 +11,11 @@ FastAPI -----> SQLite -----> respuesta HTTP 202
                    |
                    | FAILURE / UNSTABLE
                    v
-             tarea de análisis -----> Ollama
+             tarea de análisis -----> BuildAnalyzer
+                                           |
+                            +--------------+----------------+
+                            |                               |
+                         Ollama                   OpenAI-compatible
                    |
                    v
              diagnóstico en SQLite -----> /dashboard
@@ -29,17 +33,21 @@ build terminada de cada job en cada escaneo.
 
 ## Contratos
 
-`BuildAnalysis` es el contrato interno y HTTP:
+`BuildAnalysis` es el contrato interno común para todos los proveedores:
 
 - `category`: categoría breve y no vacía.
 - `root_cause`: causa explicada con evidencia del log.
 - `confidence`: número entre 0 y 1.
 - `recommendation`: siguiente acción concreta.
 
-Ollama devuelve un sobre propio cuyo campo `response` contiene JSON. El adaptador
-valida ese JSON antes de devolverlo a la aplicación. Una respuesta inválida o un
-fallo de proveedor se convierte en `ExternalServiceError`; la API lo expone como
-HTTP 502.
+Cada adaptador traduce su protocolo a `BuildAnalysis` y valida el JSON antes de
+devolverlo. Una respuesta inválida o un fallo de proveedor se convierte en
+`ExternalServiceError`; la API lo expone como HTTP 502.
+
+`create_build_analyzer` selecciona el adaptador mediante `LLM_PROVIDER`. Los
+casos de uso no conocen URLs, autenticación ni formatos propios del proveedor.
+La configuración `EMBEDDING_*` es independiente porque el futuro RAG puede usar
+otro servicio o modelo distinto al generativo.
 
 ## Decisiones
 

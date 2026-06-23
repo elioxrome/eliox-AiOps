@@ -12,7 +12,7 @@ from fastapi import (
 )
 
 from apps.api.dependencies import (
-    get_ollama_client,
+    get_build_analyzer,
     get_repository,
     get_settings,
 )
@@ -49,7 +49,7 @@ def get_ingest_use_case(
 ) -> IngestBuildUseCase:
     return IngestBuildUseCase(
         repository,
-        get_ollama_client(),
+        get_build_analyzer(),
         settings.max_log_characters,
     )
 

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 
-from apps.api.dependencies import get_ollama_client, get_settings
+from apps.api.dependencies import get_build_analyzer, get_settings
 from src.application.errors import ExternalServiceError
 from src.application.models import BuildAnalysis
 from src.application.use_cases.analyze_build import AnalyzeBuildUseCase
@@ -21,7 +21,7 @@ def get_analyze_build_use_case(
         settings.jenkins_token,
         settings.jenkins_timeout_seconds,
     )
-    llm = get_ollama_client()
+    llm = get_build_analyzer()
     return AnalyzeBuildUseCase(jenkins, llm, settings.max_log_characters)
 
 

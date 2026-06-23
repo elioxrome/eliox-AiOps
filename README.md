@@ -1,8 +1,8 @@
 # Jenkins AIOps
 
 Servicio que recibe resultados de Jenkins, registra los builds correctos y
-analiza con Ollama los builds `FAILURE` o `UNSTABLE`. Incluye historial,
-diagnóstico y valoración desde una interfaz web.
+analiza con un proveedor LLM configurable los builds `FAILURE` o `UNSTABLE`.
+Incluye historial, diagnóstico y valoración desde una interfaz web.
 
 ## Inicio rápido
 
@@ -74,7 +74,49 @@ stack trace del fallo. SQLite persiste el historial en el volumen `api-data`.
 
 El endpoint antiguo `GET /analyze/{job}/{build}` se conserva para diagnóstico
 manual, pero el envío desde Jenkins evita una segunda descarga del log y no
-bloquea el pipeline mientras Ollama procesa.
+bloquea el pipeline mientras el proveedor LLM procesa.
+
+## Proveedores de IA
+
+La aplicación usa una interfaz común y actualmente incluye:
+
+- `ollama`
+- `openai-compatible`, válido para OpenAI y servidores compatibles como LM
+  Studio, vLLM, LocalAI o LiteLLM.
+
+Configuración local con Ollama:
+
+```env
+LLM_PROVIDER=ollama
+LLM_BASE_URL=http://127.0.0.1:11434
+LLM_MODEL=qwen3:1.7b
+LLM_API_KEY=
+```
+
+Configuración con una API compatible con OpenAI:
+
+```env
+LLM_PROVIDER=openai-compatible
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=nombre-del-modelo
+LLM_API_KEY=tu-api-key
+LLM_JSON_MODE=true
+```
+
+Para Docker utiliza las variables equivalentes `DOCKER_LLM_*`. Si el proveedor
+no implementa `response_format`, configura `LLM_JSON_MODE=false`.
+
+La futura capa RAG tiene configuración independiente:
+
+```env
+EMBEDDING_PROVIDER=ollama
+EMBEDDING_BASE_URL=http://127.0.0.1:11434
+EMBEDDING_MODEL=embeddinggemma
+EMBEDDING_API_KEY=
+```
+
+Los embeddings todavía no se consumen; estas variables dejan separado el modelo
+generativo del futuro modelo de recuperación.
 
 `JENKINS_POLL_JOBS=*` monitoriza todos los jobs. Para limitarlo:
 

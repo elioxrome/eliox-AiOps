@@ -8,10 +8,18 @@
 | `JENKINS_USERNAME` | vacío | Usuario; vacío permite acceso anónimo |
 | `JENKINS_TOKEN` | vacío | API token de Jenkins |
 | `JENKINS_TIMEOUT_SECONDS` | `30` | Timeout del SDK de Jenkins |
-| `OLLAMA_URL` | `http://ollama:11434` | URL de Ollama |
-| `OLLAMA_MODEL` | `qwen3:8b` | Modelo usado para el análisis |
-| `DOCKER_OLLAMA_MODEL` | `qwen3:1.7b` | Modelo rápido del Ollama de Compose |
-| `OLLAMA_TIMEOUT_SECONDS` | `120` | Timeout de generación |
+| `LLM_PROVIDER` | `ollama` | `ollama`, `openai` u `openai-compatible` |
+| `LLM_BASE_URL` | `http://ollama:11434` | URL base del proveedor |
+| `LLM_MODEL` | `qwen3:1.7b` | Modelo generativo |
+| `LLM_API_KEY` | vacío | Bearer token cuando aplique |
+| `LLM_TIMEOUT_SECONDS` | `120` | Timeout de generación |
+| `LLM_TEMPERATURE` | `0.1` | Variabilidad de la respuesta |
+| `LLM_CONTEXT_TOKENS` | `4096` | Contexto para proveedores que lo soportan |
+| `LLM_MAX_OUTPUT_TOKENS` | `400` | Máximo de salida |
+| `LLM_JSON_MODE` | `true` | Envía `response_format` en Chat Completions |
+| `EMBEDDING_PROVIDER` | `ollama` | Proveedor reservado para RAG |
+| `EMBEDDING_BASE_URL` | `http://ollama:11434` | URL de embeddings |
+| `EMBEDDING_MODEL` | `embeddinggemma` | Modelo reservado para embeddings |
 | `MAX_LOG_CHARACTERS` | `10000` | Máximo de caracteres enviados |
 | `DATABASE_PATH` | `data/jenkins-aiops.db` | Archivo SQLite |
 | `DASHBOARD_LIMIT` | `100` | Builds visibles en el panel |
@@ -23,11 +31,9 @@
 Los timeouts y límites deben ser números positivos. No guardes `.env` en control
 de versiones.
 
-El servicio `api` carga `.env` mediante `env_file`. Así, variables exportadas en
-la terminal no reemplazan accidentalmente la URL o las credenciales de Jenkins
-al recrear los contenedores. Compose fija `OLLAMA_URL` a su red interna y usa
-`DOCKER_OLLAMA_MODEL`; esto permite usar otro modelo en la ejecución local con
-`uv` mediante `OLLAMA_MODEL`.
+El servicio `api` carga `.env` mediante `env_file`. Las variables `DOCKER_LLM_*`
+y `DOCKER_EMBEDDING_*` permiten que Docker use URLs distintas a la ejecución
+local con `uv`.
 
 Ollama no publica el puerto `11434` en el host: la API accede mediante
 `http://ollama:11434` dentro de la red de Compose. Esto evita conflictos con una
@@ -63,9 +69,9 @@ La limpieza conserva el cursor del monitor; solo aparecerán builds posteriores.
 Comprueba conectividad desde el contenedor, URL, nombre de job, número de build y
 permisos del token. Jenkins puede requerir un API token en vez de contraseña.
 
-### HTTP 502: fallo de Ollama
+### HTTP 502: fallo del proveedor LLM
 
-Comprueba que el contenedor está saludable y que el modelo existe:
+Con Ollama, comprueba que el contenedor está saludable y que el modelo existe:
 
 ```bash
 docker compose exec ollama ollama list

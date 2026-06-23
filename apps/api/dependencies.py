@@ -4,7 +4,8 @@ from src.application.services.jenkins_monitor import JenkinsMonitor
 from src.application.use_cases.ingest_build import IngestBuildUseCase
 from src.config import Settings
 from src.infrastructure.jenkins.client import JenkinsClient
-from src.infrastructure.llm.ollama_client import OllamaClient
+from src.infrastructure.llm.base import BuildAnalyzer
+from src.infrastructure.llm.factory import create_build_analyzer
 from src.infrastructure.persistence.build_repository import BuildRepository
 
 
@@ -20,13 +21,8 @@ def get_repository() -> BuildRepository:
     return repository
 
 
-def get_ollama_client() -> OllamaClient:
-    settings = get_settings()
-    return OllamaClient(
-        settings.ollama_url,
-        settings.ollama_model,
-        settings.ollama_timeout_seconds,
-    )
+def get_build_analyzer() -> BuildAnalyzer:
+    return create_build_analyzer(get_settings())
 
 
 def get_jenkins_monitor() -> JenkinsMonitor:
@@ -34,7 +30,7 @@ def get_jenkins_monitor() -> JenkinsMonitor:
     repository = get_repository()
     ingestion = IngestBuildUseCase(
         repository,
-        get_ollama_client(),
+        get_build_analyzer(),
         settings.max_log_characters,
     )
     jenkins = JenkinsClient(

@@ -5,7 +5,9 @@ description = "Analyze Jenkins build logs with a locally hosted LLM."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "black>=26.5.1",
     "fastapi>=0.115,<1",
+    "flake8>=7.3.0",
     "pydantic>=2.9,<3",
     "python-jenkins>=1.8,<2",
     "requests>=2.32,<3",

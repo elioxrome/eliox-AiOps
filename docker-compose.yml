@@ -7,14 +7,17 @@ services:
     env_file:
       - .env
     environment:
-      OLLAMA_URL: http://ollama:11434
-      OLLAMA_MODEL: ${DOCKER_OLLAMA_MODEL:-qwen3:1.7b}
+      LLM_PROVIDER: ${DOCKER_LLM_PROVIDER:-ollama}
+      LLM_BASE_URL: ${DOCKER_LLM_BASE_URL:-http://ollama:11434}
+      LLM_MODEL: ${DOCKER_LLM_MODEL:-qwen3:1.7b}
+      LLM_API_KEY: ${DOCKER_LLM_API_KEY:-}
+      EMBEDDING_PROVIDER: ${DOCKER_EMBEDDING_PROVIDER:-ollama}
+      EMBEDDING_BASE_URL: ${DOCKER_EMBEDDING_BASE_URL:-http://ollama:11434}
+      EMBEDDING_MODEL: ${DOCKER_EMBEDDING_MODEL:-embeddinggemma}
+      EMBEDDING_API_KEY: ${DOCKER_EMBEDDING_API_KEY:-}
       DATABASE_PATH: /data/jenkins-aiops.db
     volumes:
       - api-data:/data
-    depends_on:
-      ollama:
-        condition: service_healthy
     healthcheck:
       test:
         [

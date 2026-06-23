@@ -50,9 +50,20 @@ class Settings:
     jenkins_username: str | None
     jenkins_token: str | None
     jenkins_timeout_seconds: float
-    ollama_url: str
-    ollama_model: str
-    ollama_timeout_seconds: float
+    llm_provider: str
+    llm_base_url: str
+    llm_model: str
+    llm_api_key: str | None
+    llm_timeout_seconds: float
+    llm_temperature: float
+    llm_context_tokens: int
+    llm_max_output_tokens: int
+    llm_json_mode: bool
+    embedding_provider: str
+    embedding_base_url: str
+    embedding_model: str
+    embedding_api_key: str | None
+    embedding_timeout_seconds: float
     max_log_characters: int
     database_path: str
     ingestion_token: str | None
@@ -70,9 +81,41 @@ class Settings:
             jenkins_timeout_seconds=_positive_float(
                 "JENKINS_TIMEOUT_SECONDS", 30.0
             ),
-            ollama_url=os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/"),
-            ollama_model=os.getenv("OLLAMA_MODEL", "qwen3:8b"),
-            ollama_timeout_seconds=_positive_float("OLLAMA_TIMEOUT_SECONDS", 120.0),
+            llm_provider=os.getenv("LLM_PROVIDER", "ollama").strip().lower(),
+            llm_base_url=os.getenv(
+                "LLM_BASE_URL",
+                os.getenv("OLLAMA_URL", "http://ollama:11434"),
+            ).rstrip("/"),
+            llm_model=os.getenv(
+                "LLM_MODEL",
+                os.getenv("OLLAMA_MODEL", "qwen3:1.7b"),
+            ),
+            llm_api_key=os.getenv("LLM_API_KEY") or None,
+            llm_timeout_seconds=_positive_float(
+                "LLM_TIMEOUT_SECONDS",
+                _positive_float("OLLAMA_TIMEOUT_SECONDS", 120.0),
+            ),
+            llm_temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
+            llm_context_tokens=_positive_int("LLM_CONTEXT_TOKENS", 4_096),
+            llm_max_output_tokens=_positive_int("LLM_MAX_OUTPUT_TOKENS", 400),
+            llm_json_mode=_boolean("LLM_JSON_MODE", True),
+            embedding_provider=os.getenv(
+                "EMBEDDING_PROVIDER",
+                "ollama",
+            ).strip().lower(),
+            embedding_base_url=os.getenv(
+                "EMBEDDING_BASE_URL",
+                os.getenv("OLLAMA_URL", "http://ollama:11434"),
+            ).rstrip("/"),
+            embedding_model=os.getenv(
+                "EMBEDDING_MODEL",
+                "embeddinggemma",
+            ),
+            embedding_api_key=os.getenv("EMBEDDING_API_KEY") or None,
+            embedding_timeout_seconds=_positive_float(
+                "EMBEDDING_TIMEOUT_SECONDS",
+                60.0,
+            ),
             max_log_characters=_positive_int("MAX_LOG_CHARACTERS", 4_000),
             database_path=os.getenv("DATABASE_PATH", "data/jenkins-aiops.db"),
             ingestion_token=os.getenv("INGESTION_TOKEN") or None,
