@@ -1,0 +1,51 @@
+import groovy.json.JsonOutput
+
+pipeline {
+    agent any
+
+    environment {
+        AIOPS_URL = 'http://192.168.1.135:8000'
+    }
+
+    stages {
+        stage('Build') {
+            steps {
+                echo 'Replace this stage with the real pipeline'
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                // rawBuild.getLog may require one Jenkins script approval.
+                def logText = currentBuild.rawBuild.getLog(5000).join('\n')
+                def payload = JsonOutput.toJson([
+                    job_name: env.JOB_NAME,
+                    build_number: env.BUILD_NUMBER as Integer,
+                    status: currentBuild.currentResult,
+                    build_url: env.BUILD_URL,
+                    log: logText
+                ])
+
+                withCredentials([
+                    string(credentialsId: 'jenkins-aiops-token',
+                           variable: 'AIOPS_TOKEN')
+                ]) {
+                    httpRequest(
+                        url: "${env.AIOPS_URL}/api/builds",
+                        httpMode: 'POST',
+                        contentType: 'APPLICATION_JSON',
+                        customHeaders: [[
+                            name: 'X-AIOPS-Token',
+                            value: env.AIOPS_TOKEN,
+                            maskValue: true
+                        ]],
+                        requestBody: payload,
+                        validResponseCodes: '202'
+                    )
+                }
+            }
+        }
+    }
+}
