@@ -67,6 +67,7 @@ class BuildRecord(BaseModel):
     error: str | None
     rating: int | None
     feedback_comment: str | None
+    matched_known_error_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -74,3 +75,20 @@ class BuildRecord(BaseModel):
 class BuildFeedback(BaseModel):
     rating: int = Field(ge=-1, le=1)
     comment: str | None = Field(default=None, max_length=1_000)
+
+
+class BuildLogResponse(BaseModel):
+    log: str
+
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str = Field(min_length=1, max_length=4_000)
+
+
+class ChatTurnRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2_000)
+
+
+class ChatTurnResponse(BaseModel):
+    messages: list[ChatMessage]

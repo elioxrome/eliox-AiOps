@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from src.application.errors import ExternalServiceError, InvalidLLMResponseError
+from src.application.models import ChatMessage
 from src.infrastructure.llm.ollama_client import OllamaClient
 
 
@@ -87,3 +88,24 @@ def test_includes_ollama_error_detail() -> None:
         match="model 'missing' not found",
     ):
         client.analyze("prompt")
+
+
+def test_chat_returns_assistant_reply() -> None:
+    session = FakeSession({"message": {"role": "assistant", "content": "Hola"}})
+    client = OllamaClient("http://ollama:11434", model="test-model", session=session)
+
+    reply = client.chat([ChatMessage(role="user", content="Hola")])
+
+    assert reply == "Hola"
+    assert session.request["url"] == "http://ollama:11434/api/chat"
+    assert session.request["json"]["messages"] == [
+        {"role": "user", "content": "Hola"}
+    ]
+
+
+def test_chat_rejects_missing_message() -> None:
+    session = FakeSession({})
+    client = OllamaClient("http://ollama:11434", session=session)
+
+    with pytest.raises(InvalidLLMResponseError):
+        client.chat([ChatMessage(role="user", content="Hola")])

@@ -1,6 +1,6 @@
 # Jenkins AIOps: guía para agentes
 
-Este archivo es la fuente de contexto principal para Codex y otros agentes que
+Este archivo es la fuente de contexto principal para Claude code y otros agentes que
 trabajen en el repositorio. Antes de modificar código, consulta también
 `docs/architecture.md` y, para tareas operativas, `docs/runbook.md`.
 

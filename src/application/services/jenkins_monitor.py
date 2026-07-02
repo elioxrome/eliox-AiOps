@@ -2,9 +2,10 @@ import asyncio
 import logging
 
 from src.application.errors import ExternalServiceError
+from src.application.services.analysis_dispatcher import AnalysisDispatcher
 from src.application.use_cases.ingest_build import IngestBuildUseCase
 from src.infrastructure.jenkins.client import JenkinsClient
-from src.infrastructure.persistence.build_repository import BuildRepository
+from src.infrastructure.persistence.base import BuildRepositoryPort
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +14,16 @@ class JenkinsMonitor:
     def __init__(
         self,
         jenkins: JenkinsClient,
-        repository: BuildRepository,
+        repository: BuildRepositoryPort,
         ingestion: IngestBuildUseCase,
+        dispatcher: AnalysisDispatcher,
         jobs: tuple[str, ...],
         interval_seconds: int,
     ) -> None:
         self.jenkins = jenkins
         self.repository = repository
         self.ingestion = ingestion
+        self.dispatcher = dispatcher
         self.jobs = jobs
         self.interval_seconds = interval_seconds
 
@@ -46,7 +49,7 @@ class JenkinsMonitor:
             imported += 1
 
         for build_id, build_status in self.repository.list_pending():
-            self.ingestion.process(build_id, build_status)
+            self.dispatcher.dispatch(build_id, build_status)
         return imported
 
     async def run(self, stop_event: asyncio.Event) -> None:

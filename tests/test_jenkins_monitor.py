@@ -1,9 +1,10 @@
-from pathlib import Path
-
 from src.application.models import BuildAnalysis, BuildIngest, BuildStatus
 from src.application.services.jenkins_monitor import JenkinsMonitor
 from src.application.use_cases.ingest_build import IngestBuildUseCase
 from src.infrastructure.persistence.build_repository import BuildRepository
+from src.infrastructure.persistence.known_error_repository import (
+    KnownErrorRepository,
+)
 
 
 class FakeJenkins:
@@ -37,23 +38,52 @@ class FakeLLM:
         )
 
 
+class FakeEmbedder:
+    def embed(self, text: str) -> list[float]:
+        raise AssertionError(
+            "the regex rule should short-circuit before an embedding is needed"
+        )
+
+
+class InlineDispatcher:
+    """Runs analysis synchronously, standing in for the Celery queue in
+    tests so assertions can run right after `scan_once()` returns."""
+
+    def __init__(self) -> None:
+        self.ingestion: IngestBuildUseCase | None = None
+
+    def dispatch(self, build_id: int, status: BuildStatus) -> None:
+        assert self.ingestion is not None
+        self.ingestion.process(build_id, status)
+
+
 def test_monitor_imports_pipeline_compilation_failure_once(
-    tmp_path: Path,
+    repository: BuildRepository,
+    known_error_repository: KnownErrorRepository,
 ) -> None:
-    repository = BuildRepository(str(tmp_path / "builds.db"))
-    repository.initialize()
     llm = FakeLLM()
-    ingestion = IngestBuildUseCase(repository, llm, 10_000)
+    dispatcher = InlineDispatcher()
+    ingestion = IngestBuildUseCase(
+        repository,
+        known_error_repository,
+        llm,
+        FakeEmbedder(),
+        dispatcher,
+        10_000,
+    )
+    dispatcher.ingestion = ingestion
+    jenkins = FakeJenkins()
     monitor = JenkinsMonitor(
-        FakeJenkins(),
+        jenkins,
         repository,
         ingestion,
+        dispatcher,
         jobs=("*",),
         interval_seconds=15,
     )
 
     assert monitor.scan_once() == 0
-    monitor.jenkins.build_number = 8
+    jenkins.build_number = 8
     assert monitor.scan_once() == 1
     assert monitor.scan_once() == 0
 

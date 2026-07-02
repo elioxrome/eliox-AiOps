@@ -1,48 +1,38 @@
-from functools import lru_cache
-
 from src.application.services.jenkins_monitor import JenkinsMonitor
+from src.application.use_cases.chat_with_build import ChatWithBuildUseCase
 from src.application.use_cases.ingest_build import IngestBuildUseCase
 from src.config import Settings
-from src.infrastructure.jenkins.client import JenkinsClient
+from src.infrastructure import bootstrap
 from src.infrastructure.llm.base import BuildAnalyzer
-from src.infrastructure.llm.factory import create_build_analyzer
 from src.infrastructure.persistence.build_repository import BuildRepository
+from src.infrastructure.persistence.known_error_repository import (
+    KnownErrorRepository,
+)
 
 
-@lru_cache
 def get_settings() -> Settings:
-    return Settings.from_env()
+    return bootstrap.get_settings()
 
 
-@lru_cache
 def get_repository() -> BuildRepository:
-    repository = BuildRepository(get_settings().database_path)
-    repository.initialize()
-    return repository
+    return bootstrap.get_repository()
+
+
+def get_known_error_repository() -> KnownErrorRepository:
+    return bootstrap.get_known_error_repository()
 
 
 def get_build_analyzer() -> BuildAnalyzer:
-    return create_build_analyzer(get_settings())
+    return bootstrap.get_build_analyzer()
+
+
+def get_ingest_use_case() -> IngestBuildUseCase:
+    return bootstrap.get_ingest_use_case()
 
 
 def get_jenkins_monitor() -> JenkinsMonitor:
-    settings = get_settings()
-    repository = get_repository()
-    ingestion = IngestBuildUseCase(
-        repository,
-        get_build_analyzer(),
-        settings.max_log_characters,
-    )
-    jenkins = JenkinsClient(
-        settings.jenkins_url,
-        settings.jenkins_username,
-        settings.jenkins_token,
-        settings.jenkins_timeout_seconds,
-    )
-    return JenkinsMonitor(
-        jenkins,
-        repository,
-        ingestion,
-        settings.jenkins_poll_jobs,
-        settings.jenkins_poll_interval_seconds,
-    )
+    return bootstrap.get_jenkins_monitor()
+
+
+def get_chat_use_case() -> ChatWithBuildUseCase:
+    return bootstrap.get_chat_use_case()

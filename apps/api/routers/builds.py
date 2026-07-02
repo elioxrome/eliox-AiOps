@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
-    BackgroundTasks,
     Depends,
     Header,
     HTTPException,
@@ -12,7 +11,8 @@ from fastapi import (
 )
 
 from apps.api.dependencies import (
-    get_build_analyzer,
+    get_ingest_use_case,
+    get_known_error_repository,
     get_repository,
     get_settings,
 )
@@ -20,6 +20,7 @@ from src.application.models import (
     BuildAccepted,
     BuildFeedback,
     BuildIngest,
+    BuildLogResponse,
     BuildRecord,
     BuildStatus,
     ClearBuildsResult,
@@ -27,6 +28,9 @@ from src.application.models import (
 from src.application.use_cases.ingest_build import IngestBuildUseCase
 from src.config import Settings
 from src.infrastructure.persistence.build_repository import BuildRepository
+from src.infrastructure.persistence.known_error_repository import (
+    KnownErrorRepository,
+)
 
 router = APIRouter(prefix="/api/builds", tags=["builds"])
 
@@ -43,17 +47,6 @@ def authorize_ingestion(
         )
 
 
-def get_ingest_use_case(
-    repository: Annotated[BuildRepository, Depends(get_repository)],
-    settings: Annotated[Settings, Depends(get_settings)],
-) -> IngestBuildUseCase:
-    return IngestBuildUseCase(
-        repository,
-        get_build_analyzer(),
-        settings.max_log_characters,
-    )
-
-
 @router.post(
     "",
     response_model=BuildAccepted,
@@ -62,12 +55,9 @@ def get_ingest_use_case(
 )
 def ingest_build(
     build: BuildIngest,
-    background_tasks: BackgroundTasks,
     use_case: Annotated[IngestBuildUseCase, Depends(get_ingest_use_case)],
 ) -> BuildAccepted:
     build_id, processing_status = use_case.receive(build)
-    if build.status in {BuildStatus.FAILURE, BuildStatus.UNSTABLE}:
-        background_tasks.add_task(use_case.process, build_id, build.status)
 
     message = (
         "Build registered without LLM analysis"
@@ -111,15 +101,31 @@ def get_build(
     return record
 
 
+@router.get("/{build_id}/log", response_model=BuildLogResponse)
+def get_build_log(
+    build_id: int,
+    repository: Annotated[BuildRepository, Depends(get_repository)],
+) -> BuildLogResponse:
+    try:
+        return BuildLogResponse(log=repository.get_log(build_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Build not found") from exc
+
+
 @router.post("/{build_id}/feedback", response_model=BuildRecord)
 def rate_build(
     build_id: int,
     feedback: BuildFeedback,
     repository: Annotated[BuildRepository, Depends(get_repository)],
+    known_errors: Annotated[
+        KnownErrorRepository, Depends(get_known_error_repository)
+    ],
 ) -> BuildRecord:
     if not repository.rate(build_id, feedback.rating, feedback.comment):
         raise HTTPException(status_code=404, detail="Build not found")
     record = repository.get(build_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Build not found")
+    if record.matched_known_error_id is not None:
+        known_errors.adjust_trust(record.matched_known_error_id, feedback.rating)
     return record

@@ -64,10 +64,14 @@ class Settings:
     embedding_model: str
     embedding_api_key: str | None
     embedding_timeout_seconds: float
+    embedding_dimensions: int
+    rag_enabled: bool
+    rag_similarity_threshold: float
     max_log_characters: int
-    database_path: str
+    database_url: str
+    redis_url: str
+    celery_worker_concurrency: int
     ingestion_token: str | None
-    dashboard_limit: int
     jenkins_poll_enabled: bool
     jenkins_poll_interval_seconds: int
     jenkins_poll_jobs: tuple[str, ...]
@@ -116,10 +120,21 @@ class Settings:
                 "EMBEDDING_TIMEOUT_SECONDS",
                 60.0,
             ),
+            embedding_dimensions=_positive_int("EMBEDDING_DIMENSIONS", 768),
+            rag_enabled=_boolean("RAG_ENABLED", True),
+            rag_similarity_threshold=_positive_float(
+                "RAG_SIMILARITY_THRESHOLD", 0.15
+            ),
             max_log_characters=_positive_int("MAX_LOG_CHARACTERS", 4_000),
-            database_path=os.getenv("DATABASE_PATH", "data/jenkins-aiops.db"),
+            database_url=os.getenv(
+                "DATABASE_URL",
+                "postgresql://jenkins_aiops:jenkins_aiops@postgres:5432/jenkins_aiops",
+            ),
+            redis_url=os.getenv("REDIS_URL", "redis://redis:6379/0"),
+            celery_worker_concurrency=_positive_int(
+                "CELERY_WORKER_CONCURRENCY", 2
+            ),
             ingestion_token=os.getenv("INGESTION_TOKEN") or None,
-            dashboard_limit=_positive_int("DASHBOARD_LIMIT", 100),
             jenkins_poll_enabled=_boolean("JENKINS_POLL_ENABLED", False),
             jenkins_poll_interval_seconds=_positive_int(
                 "JENKINS_POLL_INTERVAL_SECONDS",

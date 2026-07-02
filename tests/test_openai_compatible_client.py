@@ -4,6 +4,7 @@ import pytest
 import requests
 
 from src.application.errors import ExternalServiceError
+from src.application.models import ChatMessage
 from src.infrastructure.llm.openai_compatible_client import (
     OpenAICompatibleClient,
 )
@@ -91,3 +92,20 @@ def test_exposes_provider_error_message() -> None:
 
     with pytest.raises(ExternalServiceError, match="Invalid API key"):
         client.analyze("prompt")
+
+
+def test_chat_returns_assistant_reply() -> None:
+    session = FakeSession(
+        {"choices": [{"message": {"content": "Revisa el disco"}}]}
+    )
+    client = OpenAICompatibleClient(
+        "https://api.example/v1", "test-model", session=session
+    )
+
+    reply = client.chat([ChatMessage(role="user", content="¿Por qué falló?")])
+
+    assert reply == "Revisa el disco"
+    assert session.request["url"] == "https://api.example/v1/chat/completions"
+    assert session.request["json"]["messages"] == [
+        {"role": "user", "content": "¿Por qué falló?"}
+    ]

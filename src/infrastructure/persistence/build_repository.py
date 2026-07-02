@@ -1,55 +1,21 @@
-import sqlite3
 from datetime import UTC, datetime
-from pathlib import Path
+
+from psycopg.rows import DictRow
+from psycopg_pool import ConnectionPool
 
 from src.application.models import (
     BuildAnalysis,
     BuildIngest,
     BuildRecord,
     BuildStatus,
+    ChatMessage,
     ProcessingStatus,
 )
 
 
 class BuildRepository:
-    def __init__(self, database_path: str) -> None:
-        self.database_path = database_path
-
-    def initialize(self) -> None:
-        Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS builds (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    job_name TEXT NOT NULL,
-                    build_number INTEGER NOT NULL,
-                    status TEXT NOT NULL,
-                    build_url TEXT,
-                    log TEXT NOT NULL,
-                    processing_status TEXT NOT NULL,
-                    category TEXT,
-                    root_cause TEXT,
-                    confidence REAL,
-                    recommendation TEXT,
-                    error TEXT,
-                    rating INTEGER,
-                    feedback_comment TEXT,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE(job_name, build_number)
-                )
-                """
-            )
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS monitor_state (
-                    job_name TEXT PRIMARY KEY,
-                    last_build_number INTEGER NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-                """
-            )
+    def __init__(self, pool: ConnectionPool) -> None:
+        self.pool = pool
 
     def save_received(
         self,
@@ -57,26 +23,28 @@ class BuildRepository:
         processing_status: ProcessingStatus,
         max_log_characters: int,
     ) -> int:
-        now = datetime.now(UTC).isoformat()
+        now = datetime.now(UTC)
         log = build.log[-max_log_characters:]
-        with self._connect() as connection:
-            connection.execute(
+        with self.pool.connection() as connection:
+            row = connection.execute(
                 """
                 INSERT INTO builds (
                     job_name, build_number, status, build_url, log,
                     processing_status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(job_name, build_number) DO UPDATE SET
-                    status = excluded.status,
-                    build_url = excluded.build_url,
-                    log = excluded.log,
-                    processing_status = excluded.processing_status,
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (job_name, build_number) DO UPDATE SET
+                    status = EXCLUDED.status,
+                    build_url = EXCLUDED.build_url,
+                    log = EXCLUDED.log,
+                    processing_status = EXCLUDED.processing_status,
                     category = NULL,
                     root_cause = NULL,
                     confidence = NULL,
                     recommendation = NULL,
                     error = NULL,
-                    updated_at = excluded.updated_at
+                    matched_known_error_id = NULL,
+                    updated_at = EXCLUDED.updated_at
+                RETURNING id
                 """,
                 (
                     build.job_name,
@@ -88,13 +56,6 @@ class BuildRepository:
                     now,
                     now,
                 ),
-            )
-            row = connection.execute(
-                """
-                SELECT id FROM builds
-                WHERE job_name = ? AND build_number = ?
-                """,
-                (build.job_name, build.build_number),
             ).fetchone()
         return int(row["id"])
 
@@ -116,18 +77,18 @@ class BuildRepository:
         root_cause: str,
         recommendation: str,
     ) -> None:
-        now = datetime.now(UTC).isoformat()
-        with self._connect() as connection:
+        now = datetime.now(UTC)
+        with self.pool.connection() as connection:
             connection.execute(
                 """
                 UPDATE builds SET
-                    processing_status = ?,
-                    category = ?,
-                    root_cause = ?,
+                    processing_status = %s,
+                    category = %s,
+                    root_cause = %s,
                     confidence = 1,
-                    recommendation = ?,
-                    updated_at = ?
-                WHERE id = ?
+                    recommendation = %s,
+                    updated_at = %s
+                WHERE id = %s
                 """,
                 (
                     ProcessingStatus.COMPLETED.value,
@@ -143,20 +104,22 @@ class BuildRepository:
         self,
         build_id: int,
         analysis: BuildAnalysis,
+        matched_known_error_id: int | None = None,
     ) -> None:
-        now = datetime.now(UTC).isoformat()
-        with self._connect() as connection:
+        now = datetime.now(UTC)
+        with self.pool.connection() as connection:
             connection.execute(
                 """
                 UPDATE builds SET
-                    processing_status = ?,
-                    category = ?,
-                    root_cause = ?,
-                    confidence = ?,
-                    recommendation = ?,
+                    processing_status = %s,
+                    category = %s,
+                    root_cause = %s,
+                    confidence = %s,
+                    recommendation = %s,
                     error = NULL,
-                    updated_at = ?
-                WHERE id = ?
+                    matched_known_error_id = %s,
+                    updated_at = %s
+                WHERE id = %s
                 """,
                 (
                     ProcessingStatus.COMPLETED.value,
@@ -164,29 +127,30 @@ class BuildRepository:
                     analysis.root_cause,
                     analysis.confidence,
                     analysis.recommendation,
+                    matched_known_error_id,
                     now,
                     build_id,
                 ),
             )
 
     def fail(self, build_id: int, error: str) -> None:
-        now = datetime.now(UTC).isoformat()
-        with self._connect() as connection:
+        now = datetime.now(UTC)
+        with self.pool.connection() as connection:
             connection.execute(
                 """
                 UPDATE builds SET
-                    processing_status = ?,
-                    error = ?,
-                    updated_at = ?
-                WHERE id = ?
+                    processing_status = %s,
+                    error = %s,
+                    updated_at = %s
+                WHERE id = %s
                 """,
                 (ProcessingStatus.FAILED.value, error, now, build_id),
             )
 
     def get_log(self, build_id: int) -> str:
-        with self._connect() as connection:
+        with self.pool.connection() as connection:
             row = connection.execute(
-                "SELECT log FROM builds WHERE id = ?",
+                "SELECT log FROM builds WHERE id = %s",
                 (build_id,),
             ).fetchone()
         if row is None:
@@ -194,76 +158,76 @@ class BuildRepository:
         return str(row["log"])
 
     def get(self, build_id: int) -> BuildRecord | None:
-        with self._connect() as connection:
+        with self.pool.connection() as connection:
             row = connection.execute(
-                "SELECT * FROM builds WHERE id = ?",
+                "SELECT * FROM builds WHERE id = %s",
                 (build_id,),
             ).fetchone()
         return self._to_record(row) if row else None
 
     def exists(self, job_name: str, build_number: int) -> bool:
-        with self._connect() as connection:
+        with self.pool.connection() as connection:
             row = connection.execute(
                 """
                 SELECT 1 FROM builds
-                WHERE job_name = ? AND build_number = ?
+                WHERE job_name = %s AND build_number = %s
                 """,
                 (job_name, build_number),
             ).fetchone()
         return row is not None
 
     def get_last_observed_build(self, job_name: str) -> int | None:
-        with self._connect() as connection:
+        with self.pool.connection() as connection:
             row = connection.execute(
                 """
                 SELECT last_build_number FROM monitor_state
-                WHERE job_name = ?
+                WHERE job_name = %s
                 """,
                 (job_name,),
             ).fetchone()
         return int(row["last_build_number"]) if row else None
 
     def mark_build_observed(self, job_name: str, build_number: int) -> None:
-        now = datetime.now(UTC).isoformat()
-        with self._connect() as connection:
+        now = datetime.now(UTC)
+        with self.pool.connection() as connection:
             connection.execute(
                 """
                 INSERT INTO monitor_state (
                     job_name, last_build_number, updated_at
-                ) VALUES (?, ?, ?)
-                ON CONFLICT(job_name) DO UPDATE SET
-                    last_build_number = MAX(
+                ) VALUES (%s, %s, %s)
+                ON CONFLICT (job_name) DO UPDATE SET
+                    last_build_number = GREATEST(
                         monitor_state.last_build_number,
-                        excluded.last_build_number
+                        EXCLUDED.last_build_number
                     ),
-                    updated_at = excluded.updated_at
+                    updated_at = EXCLUDED.updated_at
                 """,
                 (job_name, build_number, now),
             )
 
     def clear_builds(self) -> int:
-        with self._connect() as connection:
+        with self.pool.connection() as connection:
             cursor = connection.execute("DELETE FROM builds")
         return cursor.rowcount
 
     def list_recent(self, limit: int = 100) -> list[BuildRecord]:
-        with self._connect() as connection:
+        with self.pool.connection() as connection:
             rows = connection.execute(
                 """
                 SELECT * FROM builds
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (limit,),
             ).fetchall()
         return [self._to_record(row) for row in rows]
 
     def list_pending(self) -> list[tuple[int, BuildStatus]]:
-        with self._connect() as connection:
+        with self.pool.connection() as connection:
             rows = connection.execute(
                 """
                 SELECT id, status FROM builds
-                WHERE processing_status IN (?, ?)
+                WHERE processing_status IN (%s, %s)
                 ORDER BY created_at DESC
                 """,
                 (
@@ -277,41 +241,59 @@ class BuildRepository:
         ]
 
     def rate(self, build_id: int, rating: int, comment: str | None) -> bool:
-        now = datetime.now(UTC).isoformat()
-        with self._connect() as connection:
+        now = datetime.now(UTC)
+        with self.pool.connection() as connection:
             cursor = connection.execute(
                 """
                 UPDATE builds SET
-                    rating = ?,
-                    feedback_comment = ?,
-                    updated_at = ?
-                WHERE id = ?
+                    rating = %s,
+                    feedback_comment = %s,
+                    updated_at = %s
+                WHERE id = %s
                 """,
                 (rating, comment, now, build_id),
             )
         return cursor.rowcount > 0
+
+    def add_chat_message(self, build_id: int, role: str, content: str) -> None:
+        now = datetime.now(UTC)
+        with self.pool.connection() as connection:
+            connection.execute(
+                """
+                INSERT INTO build_chat_messages (build_id, role, content, created_at)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (build_id, role, content, now),
+            )
+
+    def list_chat_messages(self, build_id: int) -> list[ChatMessage]:
+        with self.pool.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT role, content FROM build_chat_messages
+                WHERE build_id = %s
+                ORDER BY created_at ASC, id ASC
+                """,
+                (build_id,),
+            ).fetchall()
+        return [ChatMessage(role=row["role"], content=row["content"]) for row in rows]
 
     def _update_status(
         self,
         build_id: int,
         processing_status: ProcessingStatus,
     ) -> None:
-        now = datetime.now(UTC).isoformat()
-        with self._connect() as connection:
+        now = datetime.now(UTC)
+        with self.pool.connection() as connection:
             connection.execute(
                 """
                 UPDATE builds
-                SET processing_status = ?, updated_at = ?
-                WHERE id = ?
+                SET processing_status = %s, updated_at = %s
+                WHERE id = %s
                 """,
                 (processing_status.value, now, build_id),
             )
 
-    def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path, timeout=30)
-        connection.row_factory = sqlite3.Row
-        return connection
-
     @staticmethod
-    def _to_record(row: sqlite3.Row) -> BuildRecord:
+    def _to_record(row: DictRow) -> BuildRecord:
         return BuildRecord.model_validate(dict(row))

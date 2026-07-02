@@ -12,14 +12,15 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project \
-    && useradd --create-home --uid 10001 appuser \
-    && mkdir /data \
-    && chown appuser:appuser /data
+    && useradd --create-home --uid 10001 appuser
 
 COPY --chown=appuser:appuser apps ./apps
 COPY --chown=appuser:appuser src ./src
+COPY --chown=appuser:appuser frontend ./frontend
+COPY --chown=appuser:appuser migrations ./migrations
+COPY --chown=appuser:appuser alembic.ini ./alembic.ini
 
 USER appuser
-EXPOSE 8000
+EXPOSE 8000 5000
 
-CMD ["uvicorn", "apps.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn apps.api.main:app --host 0.0.0.0 --port 8000"]

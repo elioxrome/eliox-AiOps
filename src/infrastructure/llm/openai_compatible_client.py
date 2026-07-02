@@ -2,7 +2,7 @@ import requests
 from pydantic import ValidationError
 
 from src.application.errors import ExternalServiceError, InvalidLLMResponseError
-from src.application.models import BuildAnalysis
+from src.application.models import BuildAnalysis, ChatMessage
 
 
 class OpenAICompatibleClient:
@@ -77,6 +77,51 @@ class OpenAICompatibleClient:
             raise InvalidLLMResponseError(
                 "LLM provider response does not match the analysis schema"
             ) from exc
+
+    def chat(self, messages: list[ChatMessage]) -> str:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        try:
+            response = self.session.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": message.role, "content": message.content}
+                        for message in messages
+                    ],
+                    "temperature": self.temperature,
+                    "max_tokens": self.max_output_tokens,
+                },
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detail = self._error_detail(exc.response)
+            raise ExternalServiceError(
+                f"LLM provider request failed: {detail}"
+            ) from exc
+        except requests.RequestException as exc:
+            raise ExternalServiceError(
+                f"Could not connect to LLM provider at {self.base_url}"
+            ) from exc
+
+        try:
+            payload = response.json()
+            content = payload["choices"][0]["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise InvalidLLMResponseError(
+                "LLM provider returned an invalid chat completion"
+            ) from exc
+
+        if not isinstance(content, str) or not content:
+            raise InvalidLLMResponseError(
+                "LLM provider response content is not text"
+            )
+        return content
 
     @staticmethod
     def _error_detail(response: requests.Response | None) -> str:

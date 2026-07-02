@@ -3,7 +3,6 @@ services:
     build: .
     ports:
       - "8000:8000"
-      - "5000:8000"
     env_file:
       - .env
     environment:
@@ -15,9 +14,13 @@ services:
       EMBEDDING_BASE_URL: ${DOCKER_EMBEDDING_BASE_URL:-http://ollama:11434}
       EMBEDDING_MODEL: ${DOCKER_EMBEDDING_MODEL:-embeddinggemma}
       EMBEDDING_API_KEY: ${DOCKER_EMBEDDING_API_KEY:-}
-      DATABASE_PATH: /data/jenkins-aiops.db
-    volumes:
-      - api-data:/data
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://jenkins_aiops:jenkins_aiops@postgres:5432/jenkins_aiops}
+      REDIS_URL: ${DOCKER_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test:
         [
@@ -31,6 +34,89 @@ services:
       timeout: 3s
       retries: 5
 
+  worker:
+    build: .
+    command:
+      - celery
+      - -A
+      - src.infrastructure.queue.tasks:celery_app
+      - worker
+      - --loglevel=info
+      - --concurrency=${CELERY_WORKER_CONCURRENCY:-2}
+      - -Q
+      - analysis
+    env_file:
+      - .env
+    environment:
+      LLM_PROVIDER: ${DOCKER_LLM_PROVIDER:-ollama}
+      LLM_BASE_URL: ${DOCKER_LLM_BASE_URL:-http://ollama:11434}
+      LLM_MODEL: ${DOCKER_LLM_MODEL:-qwen3:1.7b}
+      LLM_API_KEY: ${DOCKER_LLM_API_KEY:-}
+      EMBEDDING_PROVIDER: ${DOCKER_EMBEDDING_PROVIDER:-ollama}
+      EMBEDDING_BASE_URL: ${DOCKER_EMBEDDING_BASE_URL:-http://ollama:11434}
+      EMBEDDING_MODEL: ${DOCKER_EMBEDDING_MODEL:-embeddinggemma}
+      EMBEDDING_API_KEY: ${DOCKER_EMBEDDING_API_KEY:-}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://jenkins_aiops:jenkins_aiops@postgres:5432/jenkins_aiops}
+      REDIS_URL: ${DOCKER_REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      api:
+        condition: service_healthy
+
+  frontend:
+    build: .
+    command:
+      - uvicorn
+      - frontend.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      API_BASE_URL: ${DOCKER_API_BASE_URL:-http://api:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; \
+          urllib.request.urlopen('http://localhost:5000/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: jenkins_aiops
+      POSTGRES_PASSWORD: jenkins_aiops
+      POSTGRES_DB: jenkins_aiops
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jenkins_aiops"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   ollama:
     image: ollama/ollama
     volumes:
@@ -43,4 +129,5 @@ services:
 
 volumes:
   ollama-data:
-  api-data:
+  postgres-data:
+  redis-data:

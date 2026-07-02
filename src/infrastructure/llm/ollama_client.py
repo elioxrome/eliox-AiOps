@@ -2,7 +2,7 @@ import requests
 from pydantic import ValidationError
 
 from src.application.errors import ExternalServiceError, InvalidLLMResponseError
-from src.application.models import BuildAnalysis
+from src.application.models import BuildAnalysis, ChatMessage
 
 
 class OllamaClient:
@@ -68,6 +68,47 @@ class OllamaClient:
             raise InvalidLLMResponseError(
                 "Ollama response does not match the build analysis schema"
             ) from exc
+
+    def chat(self, messages: list[ChatMessage]) -> str:
+        try:
+            response = self.session.post(
+                f"{self.url}/api/chat",
+                json={
+                    "model": self.model,
+                    "messages": [
+                        {"role": message.role, "content": message.content}
+                        for message in messages
+                    ],
+                    "stream": False,
+                    "think": False,
+                    "options": {
+                        "temperature": self.temperature,
+                        "num_ctx": self.context_tokens,
+                        "num_predict": self.max_output_tokens,
+                    },
+                },
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+        except requests.HTTPError as exc:
+            detail = self._error_detail(exc.response)
+            raise ExternalServiceError(f"Ollama request failed: {detail}") from exc
+        except requests.RequestException as exc:
+            raise ExternalServiceError(
+                f"Could not connect to Ollama at {self.url}"
+            ) from exc
+
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ExternalServiceError("Ollama returned invalid JSON") from exc
+
+        content = payload.get("message", {}).get("content")
+        if not isinstance(content, str) or not content:
+            raise InvalidLLMResponseError(
+                "Ollama chat response does not contain a textual message"
+            )
+        return content
 
     @staticmethod
     def _error_detail(response: requests.Response | None) -> str:
