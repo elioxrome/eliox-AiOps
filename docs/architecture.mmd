@@ -1,0 +1,86 @@
+flowchart TB
+    Jenkins["Jenkins<br/>(post/always + API)"]
+
+    subgraph API["Capa API — apps/api"]
+        direction TB
+        Builds["routers/builds.py<br/>POST /api/builds<br/>GET /api/builds (+ filtros, facets)"]
+        Analysis["routers/analysis.py<br/>GET /analyze/{job}/{build}"]
+        Chat["routers/chat.py"]
+        Deps["dependencies.py"]
+    end
+
+    Frontend["frontend/ (Streamlit, puerto 5000)<br/>dashboard_view.py + detail_view.py"]
+
+    subgraph APP["Capa aplicación — src/application"]
+        direction TB
+        Ingest["IngestBuildUseCase<br/>receive() / process()"]
+        ChatUC["ChatWithBuildUseCase"]
+        Monitor["JenkinsMonitor<br/>(poller periódico)"]
+        Dispatcher["AnalysisDispatcher<br/>(Protocol)"]
+        Normalize["log_normalization.py<br/>normalize_log_signature"]
+    end
+
+    subgraph INFRA["Capa infraestructura — src/infrastructure"]
+        direction TB
+        Bootstrap["bootstrap.py<br/>DI (lru_cache por proceso)"]
+        JenkinsClient["jenkins/client.py"]
+        CeleryDispatcher["queue/dispatcher.py<br/>CeleryAnalysisDispatcher"]
+        CeleryTasks["queue/tasks.py"]
+        BuildRepo["persistence/build_repository.py"]
+        KnownErrorRepo["persistence/known_error_repository.py"]
+        LLMFactory["llm/factory.py<br/>create_build_analyzer / create_embedder / create_chat_model"]
+    end
+
+    subgraph WORKER["Proceso worker — Celery"]
+        direction TB
+        CeleryWorker["worker de Celery"]
+        DetectRule["detect_known_failure<br/>(regex, sin coste)"]
+        BuildAnalyzer["BuildAnalyzer<br/>(LLM, solo si no hay match)"]
+    end
+
+    subgraph DATA["Almacenamiento"]
+        direction TB
+        Postgres[("PostgreSQL<br/>builds, monitor_state")]
+        PGVector[("pgvector<br/>known_errors")]
+        Redis[("Redis<br/>cola 'analysis'")]
+    end
+
+    LLMProvider["Proveedor LLM / embeddings<br/>(Ollama u otro, vía LLM_PROVIDER / EMBEDDING_*)"]
+
+    Jenkins -->|"POST build (estado + log)"| Builds
+    Jenkins -.->|"polling periódico"| Monitor
+    Monitor -->|"reintenta builds atascadas"| Dispatcher
+
+    Builds --> Deps --> Ingest
+    Analysis --> Deps
+    Chat --> Deps --> ChatUC
+    Frontend -->|"HTTP: BackendClient"| Builds
+    Frontend -->|"HTTP: BackendClient"| Chat
+
+    Ingest -->|"guarda build"| BuildRepo
+    Ingest -->|"FAILURE / UNSTABLE"| Dispatcher
+    Ingest -->|"SUCCESS / ABORTED / NOT_BUILT<br/>sin IA"| BuildRepo
+
+    Dispatcher --> CeleryDispatcher --> Redis
+    Redis --> CeleryWorker
+    CeleryWorker --> CeleryTasks --> Ingest
+
+    Ingest --> DetectRule
+    DetectRule -->|"sin match"| Normalize
+    Normalize -->|"embedding + búsqueda semántica"| KnownErrorRepo
+    KnownErrorRepo --> PGVector
+    KnownErrorRepo -->|"sin match confiable"| BuildAnalyzer
+    BuildAnalyzer --> LLMFactory --> LLMProvider
+    BuildAnalyzer -->|"indexa nuevo diagnóstico"| KnownErrorRepo
+
+    Ingest -->|"diagnóstico final"| BuildRepo --> Postgres
+    ChatUC --> BuildRepo
+    ChatUC --> LLMFactory
+
+    Bootstrap -.->|"DI: pools, clientes, casos de uso"| Ingest
+    Bootstrap -.-> ChatUC
+    Bootstrap -.-> Monitor
+    Bootstrap -.-> JenkinsClient
+    Monitor --> JenkinsClient --> Jenkins
+
+    Postgres --> Builds

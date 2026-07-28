@@ -7,30 +7,70 @@ trabajen en el repositorio. Antes de modificar código, consulta también
 ## Objetivo
 
 La API recibe el estado y log al terminar una build. Registra `SUCCESS` sin usar
-IA y analiza `FAILURE`/`UNSTABLE` en segundo plano. SQLite guarda historial,
-diagnóstico y feedback para el panel web.
+IA y analiza `FAILURE`/`UNSTABLE` en segundo plano, en un worker de Celery
+acotado por `CELERY_WORKER_CONCURRENCY`. Antes de invocar el LLM busca en una
+base de errores conocidos (RAG con `pgvector`); si el fallo ya fue
+diagnosticado antes, reusa ese diagnóstico. PostgreSQL guarda historial,
+diagnóstico y feedback; un frontend separado (`frontend/`, app de Streamlit)
+sirve el panel web, incluido el chat sobre el log de una build.
 
 ## Mapa rápido
 
-- `apps/api/main.py`: creación de FastAPI y endpoints operativos.
-- `apps/api/routers/analysis.py`: capa HTTP, dependencias y traducción de errores.
-- `apps/api/routers/builds.py`: ingestión, consulta y feedback de builds.
-- `apps/api/routers/dashboard.py`: panel web.
-- `src/application/use_cases/analyze_build.py`: orquestación independiente de
-  Jenkins, Ollama y FastAPI.
+- `apps/api/main.py`: creación de FastAPI, lifespan (monitor de Jenkins, cierre
+  del pool) y endpoints operativos.
+- `apps/api/dependencies.py`: fábricas de dependencias de FastAPI; delegan en
+  `src/infrastructure/bootstrap.py`.
+- `apps/api/routers/analysis.py`: endpoint legado `GET /analyze/{job}/{build}`.
+- `apps/api/routers/builds.py`: ingestión, consulta (con filtros
+  `status`/`job_name`/`category`/`date_from`/`date_to`), facets, log completo
+  y feedback de builds.
+- `apps/api/routers/chat.py`: chat sobre el log de una build.
+- `src/infrastructure/bootstrap.py`: wiring agnóstico de framework,
+  compartido por el proceso de FastAPI y el worker de Celery; cada proceso
+  cachea (`lru_cache`) su propio pool/clientes.
+- `src/application/use_cases/ingest_build.py`: decide si una build necesita
+  IA y orquesta el flujo RAG: `detect_known_failure` (regex) ->
+  `KnownErrorRepository.find_similar` (pgvector) -> LLM (que indexa el nuevo
+  diagnóstico en `known_errors`).
+- `src/application/use_cases/analyze_build.py`: endpoint legado, orquestación
+  independiente de Jenkins, LLM y FastAPI.
+- `src/application/use_cases/chat_with_build.py`: chat sobre el log de una
+  build; persiste en `build_chat_messages`.
+- `src/application/services/jenkins_monitor.py`: fallback externo para builds
+  cuyo Jenkinsfile no llega a ejecutar `post`; también redespacha builds
+  `queued`/`processing` pendientes.
+- `src/application/services/analysis_dispatcher.py`: `Protocol` del
+  despachador de análisis; `CeleryAnalysisDispatcher` (en
+  `src/infrastructure/queue/`) es la única implementación de producción.
+- `src/application/log_normalization.py`: normaliza el log (quita timestamps,
+  números de build, rutas, IDs hex) antes de generar el embedding.
 - `src/application/models.py`: contratos Pydantic de entrada/salida.
 - `src/application/errors.py`: errores estables de la aplicación.
 - `src/infrastructure/jenkins/client.py`: adaptador de `python-jenkins`.
-- `src/infrastructure/llm/factory.py`: selección del proveedor LLM.
-- `src/infrastructure/llm/ollama_client.py`: adaptador para Ollama.
+- `src/infrastructure/llm/factory.py`: selección del proveedor LLM
+  (`create_build_analyzer`/`create_embedder`/`create_chat_model`).
+- `src/infrastructure/llm/ollama_client.py`: adaptador de generación/chat para
+  Ollama.
 - `src/infrastructure/llm/openai_compatible_client.py`: adaptador de Chat
   Completions compatible con OpenAI.
+- `src/infrastructure/llm/embedding_client.py`: adaptadores de embeddings
+  (Ollama y OpenAI-compatible).
 - `src/infrastructure/llm/prompts.py`: prompts versionados junto al código.
-- `src/infrastructure/persistence/build_repository.py`: persistencia SQLite.
-- `src/application/services/jenkins_monitor.py`: fallback externo para builds
-  cuyo Jenkinsfile no llega a ejecutar `post`.
+- `src/infrastructure/persistence/{build_repository,known_error_repository,db}.py`:
+  persistencia PostgreSQL vía `psycopg3` (pool sync); `known_errors` guarda un
+  `trust_score` ajustado por feedback del usuario.
+- `src/infrastructure/queue/`: `celery_app.py`, `dispatcher.py`
+  (`CeleryAnalysisDispatcher`) y `tasks.py` (tarea `analyze_build`).
+- `migrations/`: migraciones Alembic (SQL crudo vía `op.execute()`), aplicadas
+  automáticamente al arrancar el contenedor `api`.
+- `frontend/`: panel web independiente en Streamlit (`app.py` es el
+  entrypoint; `dashboard_view.py` y `detail_view.py` renderizan las vistas;
+  `nav.py` controla la navegación vía `st.session_state`/`st.query_params`;
+  `log_highlight.py` resalta `ERROR`/`WARN`/`Exception`/`Caused by`;
+  `client.py` habla con la API HTTP, nunca con Postgres/Redis directamente).
 - `src/config.py`: única fuente de configuración por entorno.
-- `tests/`: pruebas unitarias sin servicios externos.
+- `tests/`: pruebas unitarias sin servicios externos (Postgres+pgvector se
+  levanta efímero vía `testcontainers` para las que sí tocan la base).
 
 ## Reglas de diseño
 
@@ -55,12 +95,15 @@ diagnóstico y feedback para el panel web.
    repetidamente la misma build.
 10. No leas variables de proveedor dentro de los casos de uso. Añade proveedores
     mediante `create_build_analyzer` y conserva separadas generación y embeddings.
+11. No reintroduzcas SQLite ni un modo sin Docker: Postgres, Redis y el worker
+    de Celery corren siempre vía `docker compose`, incluso para desarrollo
+    local con `--reload`.
 
 ## Comandos de trabajo
 
 ```bash
 uv sync
-uv run pytest -q
+uv run pytest -q  # necesita Docker: levanta Postgres+pgvector vía testcontainers
 uv run ruff check .
 uv run uvicorn apps.api.main:app --reload
 ```
@@ -71,6 +114,7 @@ Con contenedores:
 cp .env.example .env
 docker compose up --build -d
 docker compose exec ollama ollama pull qwen3:1.7b
+docker compose exec ollama ollama pull embeddinggemma
 curl http://localhost:8000/health
 ```
 
@@ -88,3 +132,7 @@ curl http://localhost:8000/health
 - Ollama no descarga el modelo al arrancar; debe prepararse con `ollama pull`.
 - Jenkins no forma parte del `docker-compose.yml`; se configura como servicio
   externo mediante `JENKINS_URL`.
+- `streamlit run frontend/app.py` agrega `/app/frontend` a `sys.path`, no
+  `/app`; los imports absolutos `from frontend.xxx import ...` solo resuelven
+  porque el servicio `frontend` fija `PYTHONPATH=/app` en `docker-compose.yml`.
+  No lo quites.

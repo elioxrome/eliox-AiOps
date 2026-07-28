@@ -82,7 +82,7 @@ Al enviar dos builds con el mismo error (mismo log normalizado), la segunda
 debe completarse sin que el worker llame al LLM: revisa que
 `GET /api/builds/{id}` traiga `matched_known_error_id` distinto de `null`.
 
-El panel está en `http://localhost:5000/dashboard`. Para integrar Jenkins, crea
+El panel (Streamlit) está en `http://localhost:5000`. Para integrar Jenkins, crea
 una credencial Secret text con el mismo valor que `INGESTION_TOKEN` y utiliza
 `examples/Jenkinsfile`.
 

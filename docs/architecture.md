@@ -2,34 +2,93 @@
 
 ## Flujo principal
 
-```text
-Jenkins post/always
-       |
-       | POST /api/builds (estado + log)
-       v
-FastAPI -----> PostgreSQL -----> respuesta HTTP 202
-                   |
-                   | FAILURE / UNSTABLE
-                   v
-        dispatcher.dispatch() -----> Redis (cola "analysis")
-                                           |
-                                           v
-                                    worker de Celery
-                                           |
-              +----------------------------+-----------------------------+
-              |                            |                             |
-     detect_known_failure          known_errors (pgvector)          BuildAnalyzer
-      (regex, sin coste)         búsqueda semántica del log      (si no hubo match)
-              |                            |                             |
-              +----------------------------+-----------------------------+
-                                           |
-                                           v
-                          diagnóstico en PostgreSQL -----> /dashboard
+```mermaid
+flowchart TB
+    Jenkins["Jenkins<br/>(post/always + API)"]
 
-Jenkins API <---- monitor periódico
-     |
-     +---- captura fallos de compilación que nunca ejecutan post/always
-     +---- reintenta builds queued/processing vía el mismo dispatcher
+    subgraph API["Capa API — apps/api"]
+        direction TB
+        Builds["routers/builds.py<br/>POST /api/builds<br/>GET /api/builds (+ filtros, facets)"]
+        Analysis["routers/analysis.py<br/>GET /analyze/{job}/{build}"]
+        Chat["routers/chat.py"]
+        Deps["dependencies.py"]
+    end
+
+    Frontend["frontend/ (Streamlit, puerto 5000)<br/>dashboard_view.py + detail_view.py"]
+
+    subgraph APP["Capa aplicación — src/application"]
+        direction TB
+        Ingest["IngestBuildUseCase<br/>receive() / process()"]
+        ChatUC["ChatWithBuildUseCase"]
+        Monitor["JenkinsMonitor<br/>(poller periódico)"]
+        Dispatcher["AnalysisDispatcher<br/>(Protocol)"]
+        Normalize["log_normalization.py<br/>normalize_log_signature"]
+    end
+
+    subgraph INFRA["Capa infraestructura — src/infrastructure"]
+        direction TB
+        Bootstrap["bootstrap.py<br/>DI (lru_cache por proceso)"]
+        JenkinsClient["jenkins/client.py"]
+        CeleryDispatcher["queue/dispatcher.py<br/>CeleryAnalysisDispatcher"]
+        CeleryTasks["queue/tasks.py"]
+        BuildRepo["persistence/build_repository.py"]
+        KnownErrorRepo["persistence/known_error_repository.py"]
+        LLMFactory["llm/factory.py<br/>create_build_analyzer / create_embedder / create_chat_model"]
+    end
+
+    subgraph WORKER["Proceso worker — Celery"]
+        direction TB
+        CeleryWorker["worker de Celery"]
+        DetectRule["detect_known_failure<br/>(regex, sin coste)"]
+        BuildAnalyzer["BuildAnalyzer<br/>(LLM, solo si no hay match)"]
+    end
+
+    subgraph DATA["Almacenamiento"]
+        direction TB
+        Postgres[("PostgreSQL<br/>builds, monitor_state")]
+        PGVector[("pgvector<br/>known_errors")]
+        Redis[("Redis<br/>cola 'analysis'")]
+    end
+
+    LLMProvider["Proveedor LLM / embeddings<br/>(Ollama u otro, vía LLM_PROVIDER / EMBEDDING_*)"]
+
+    Jenkins -->|"POST build (estado + log)"| Builds
+    Jenkins -.->|"polling periódico"| Monitor
+    Monitor -->|"reintenta builds atascadas"| Dispatcher
+
+    Builds --> Deps --> Ingest
+    Analysis --> Deps
+    Chat --> Deps --> ChatUC
+    Frontend -->|"HTTP: BackendClient"| Builds
+    Frontend -->|"HTTP: BackendClient"| Chat
+
+    Ingest -->|"guarda build"| BuildRepo
+    Ingest -->|"FAILURE / UNSTABLE"| Dispatcher
+    Ingest -->|"SUCCESS / ABORTED / NOT_BUILT<br/>sin IA"| BuildRepo
+
+    Dispatcher --> CeleryDispatcher --> Redis
+    Redis --> CeleryWorker
+    CeleryWorker --> CeleryTasks --> Ingest
+
+    Ingest --> DetectRule
+    DetectRule -->|"sin match"| Normalize
+    Normalize -->|"embedding + búsqueda semántica"| KnownErrorRepo
+    KnownErrorRepo --> PGVector
+    KnownErrorRepo -->|"sin match confiable"| BuildAnalyzer
+    BuildAnalyzer --> LLMFactory --> LLMProvider
+    BuildAnalyzer -->|"indexa nuevo diagnóstico"| KnownErrorRepo
+
+    Ingest -->|"diagnóstico final"| BuildRepo --> Postgres
+    ChatUC --> BuildRepo
+    ChatUC --> LLMFactory
+
+    Bootstrap -.->|"DI: pools, clientes, casos de uso"| Ingest
+    Bootstrap -.-> ChatUC
+    Bootstrap -.-> Monitor
+    Bootstrap -.-> JenkinsClient
+    Monitor --> JenkinsClient --> Jenkins
+
+    Postgres --> Builds
 ```
 
 `IngestBuildUseCase.receive` decide si hace falta IA. `SUCCESS`, `ABORTED` y
@@ -53,6 +112,26 @@ build terminada de cada job en cada escaneo, y reintenta builds atascadas en
 `queued`/`processing` a través del mismo `AnalysisDispatcher` que usa el
 endpoint de ingesta (un solo camino de análisis).
 
+## Panel web (`frontend/`)
+
+App de Streamlit (puerto 5000) que consume la API HTTP vía `BackendClient`
+(`frontend/client.py`); nunca toca Postgres/Redis directamente. Dos vistas
+controladas por `st.session_state["view"]` en `frontend/app.py`:
+
+- **Dashboard** (`dashboard_view.py`): filtros por estado/job/categoría/fecha
+  (`GET /api/builds` con query params, resuelto server-side en
+  `BuildRepository.list_recent`; las opciones de job/categoría vienen de
+  `GET /api/builds/facets`). La lista de builds vive en un
+  `@st.fragment(run_every="15s")`, así el auto-refresco solo repinta esa
+  sección y no reinicia los filtros ni recarga la página completa.
+- **Detalle** (`detail_view.py`): panel de diagnóstico IA (confianza,
+  categoría, causa raíz, archivo afectado, recomendación), log completo con
+  resaltado de `ERROR`/`WARN`/`Exception`/`Caused by` (`log_highlight.py`,
+  por línea, sin librería externa) y chat (`st.chat_message`/`st.chat_input`).
+
+La navegación entre vistas usa `st.query_params["build_id"]` para permitir
+enlazar directo al detalle de una build.
+
 ## Contratos
 
 `BuildAnalysis` es el contrato interno común para todos los proveedores:
@@ -61,6 +140,8 @@ endpoint de ingesta (un solo camino de análisis).
 - `root_cause`: causa explicada con evidencia del log.
 - `confidence`: número entre 0 y 1.
 - `recommendation`: siguiente acción concreta.
+- `affected_file`: ruta o nombre de archivo mencionado en el log, o `null` si
+  el log no lo deja claro.
 
 Cada adaptador traduce su protocolo a `BuildAnalysis` y valida el JSON antes de
 devolverlo. Una respuesta inválida o un fallo de proveedor se convierte en

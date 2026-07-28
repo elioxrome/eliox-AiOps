@@ -23,6 +23,7 @@ class KnownErrorRepository:
             row = connection.execute(
                 """
                 SELECT id, category, root_cause, recommendation, confidence,
+                       affected_file,
                        embedding <=> %s::vector AS distance
                 FROM known_errors
                 WHERE trust_score > 0
@@ -40,6 +41,7 @@ class KnownErrorRepository:
                 root_cause=row["root_cause"],
                 confidence=row["confidence"],
                 recommendation=row["recommendation"],
+                affected_file=row["affected_file"],
             ),
             distance=float(row["distance"]),
         )
@@ -71,8 +73,9 @@ class KnownErrorRepository:
                 """
                 INSERT INTO known_errors (
                     signature, embedding, category, root_cause, recommendation,
-                    confidence, source_build_id, created_at, updated_at
-                ) VALUES (%s, %s::vector, %s, %s, %s, %s, %s, %s, %s)
+                    confidence, affected_file, source_build_id, created_at,
+                    updated_at
+                ) VALUES (%s, %s::vector, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
@@ -82,6 +85,7 @@ class KnownErrorRepository:
                     analysis.root_cause,
                     analysis.recommendation,
                     analysis.confidence,
+                    analysis.affected_file,
                     source_build_id,
                     now,
                     now,

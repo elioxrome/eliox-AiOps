@@ -20,8 +20,8 @@ curl http://localhost:8000/health
 ```
 
 `api` ejecuta las migraciones de Alembic automáticamente al arrancar. Abre el
-panel en <http://localhost:5000/dashboard>. La documentación de la API queda
-en <http://localhost:8000/docs>.
+panel (Streamlit) en <http://localhost:5000>. La documentación de la API
+queda en <http://localhost:8000/docs>.
 
 ## Integración recomendada con Jenkins
 
@@ -162,11 +162,12 @@ JENKINS_POLL_JOBS=backend,frontend,folder/pipeline
 
 ## Log completo y chat sobre una build
 
-Desde el panel, cada build tiene un enlace "Ver log completo" que abre
-`/dashboard/builds/{id}`: log íntegro, diagnóstico y un chat para preguntar
-sobre esa build concreta (`POST /api/builds/{id}/chat`). El chat reutiliza el
-mismo proveedor generativo configurado en `LLM_*`, mantiene el log como
-contenido no confiable en el prompt, y guarda el historial en Postgres.
+Desde el panel, cada build tiene un botón "Ver detalle" que abre la vista de
+detalle: log íntegro con resaltado de errores, diagnóstico y un chat para
+preguntar sobre esa build concreta (`POST /api/builds/{id}/chat`). El chat
+reutiliza el mismo proveedor generativo configurado en `LLM_*`, mantiene el
+log como contenido no confiable en el prompt, y guarda el historial en
+Postgres.
 
 ## Desarrollo
 

@@ -68,6 +68,7 @@ def get_dispatcher() -> AnalysisDispatcher:
     return CeleryAnalysisDispatcher()
 
 
+@lru_cache
 def get_jenkins_client() -> JenkinsClient:
     settings = get_settings()
     return JenkinsClient(

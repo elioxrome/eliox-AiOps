@@ -1,10 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from psycopg.rows import DictRow
 from psycopg_pool import ConnectionPool
 
 from src.application.models import (
     BuildAnalysis,
+    BuildFacets,
     BuildIngest,
     BuildRecord,
     BuildStatus,
@@ -41,6 +42,7 @@ class BuildRepository:
                     root_cause = NULL,
                     confidence = NULL,
                     recommendation = NULL,
+                    affected_file = NULL,
                     error = NULL,
                     matched_known_error_id = NULL,
                     updated_at = EXCLUDED.updated_at
@@ -116,6 +118,7 @@ class BuildRepository:
                     root_cause = %s,
                     confidence = %s,
                     recommendation = %s,
+                    affected_file = %s,
                     error = NULL,
                     matched_known_error_id = %s,
                     updated_at = %s
@@ -127,6 +130,7 @@ class BuildRepository:
                     analysis.root_cause,
                     analysis.confidence,
                     analysis.recommendation,
+                    analysis.affected_file,
                     matched_known_error_id,
                     now,
                     build_id,
@@ -210,17 +214,63 @@ class BuildRepository:
             cursor = connection.execute("DELETE FROM builds")
         return cursor.rowcount
 
-    def list_recent(self, limit: int = 100) -> list[BuildRecord]:
+    def list_recent(
+        self,
+        limit: int = 100,
+        status: BuildStatus | None = None,
+        job_name: str | None = None,
+        category: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[BuildRecord]:
+        clauses: list[str] = []
+        params: list[object] = []
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status.value)
+        if job_name:
+            clauses.append("job_name ILIKE %s")
+            params.append(f"%{job_name}%")
+        if category:
+            clauses.append("category = %s")
+            params.append(category)
+        if date_from is not None:
+            clauses.append("created_at::date >= %s")
+            params.append(date_from)
+        if date_to is not None:
+            clauses.append("created_at::date <= %s")
+            params.append(date_to)
+
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
         with self.pool.connection() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT * FROM builds
+                {where}
                 ORDER BY created_at DESC
                 LIMIT %s
                 """,
-                (limit,),
+                params,
             ).fetchall()
         return [self._to_record(row) for row in rows]
+
+    def list_facets(self) -> BuildFacets:
+        with self.pool.connection() as connection:
+            jobs = connection.execute(
+                "SELECT DISTINCT job_name FROM builds ORDER BY job_name"
+            ).fetchall()
+            categories = connection.execute(
+                """
+                SELECT DISTINCT category FROM builds
+                WHERE category IS NOT NULL
+                ORDER BY category
+                """
+            ).fetchall()
+        return BuildFacets(
+            jobs=[row["job_name"] for row in jobs],
+            categories=[row["category"] for row in categories],
+        )
 
     def list_pending(self) -> list[tuple[int, BuildStatus]]:
         with self.pool.connection() as connection:

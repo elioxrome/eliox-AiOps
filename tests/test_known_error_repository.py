@@ -85,6 +85,22 @@ def test_untrusted_entries_are_excluded(
     )
 
 
+def test_find_similar_returns_affected_file(
+    repository: BuildRepository,
+    known_error_repository: KnownErrorRepository,
+) -> None:
+    build_id = _make_build(repository)
+    analysis = _ANALYSIS.model_copy(update={"affected_file": "build.gradle"})
+    known_error_repository.insert(
+        "connection timeout", _UNIT_VECTOR, analysis, build_id
+    )
+
+    match = known_error_repository.find_similar(_UNIT_VECTOR, threshold=0.01)
+
+    assert match is not None
+    assert match.analysis.affected_file == "build.gradle"
+
+
 def test_record_hit_increments_counter(
     repository: BuildRepository,
     known_error_repository: KnownErrorRepository,

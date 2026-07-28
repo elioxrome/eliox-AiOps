@@ -40,8 +40,11 @@ class FrontendSettings:
             api_base_url=os.getenv(
                 "API_BASE_URL", "http://127.0.0.1:8000"
             ).rstrip("/"),
+            # Chat is synchronous end-to-end; must stay above the backend's
+            # LLM_TIMEOUT_SECONDS (120s default) or the frontend gives up
+            # while the API is still waiting on the LLM.
             request_timeout_seconds=_positive_float(
-                "API_REQUEST_TIMEOUT_SECONDS", 15.0
+                "API_REQUEST_TIMEOUT_SECONDS", 130.0
             ),
             dashboard_limit=_positive_int("DASHBOARD_LIMIT", 100),
         )

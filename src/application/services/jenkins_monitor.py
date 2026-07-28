@@ -1,19 +1,27 @@
 import asyncio
 import logging
+from typing import Protocol
 
 from src.application.errors import ExternalServiceError
+from src.application.models import BuildIngest
 from src.application.services.analysis_dispatcher import AnalysisDispatcher
 from src.application.use_cases.ingest_build import IngestBuildUseCase
-from src.infrastructure.jenkins.client import JenkinsClient
 from src.infrastructure.persistence.base import BuildRepositoryPort
 
 logger = logging.getLogger(__name__)
 
 
+class JenkinsBuildSource(Protocol):
+    def list_latest_completed_builds(
+        self,
+        included_jobs: tuple[str, ...],
+    ) -> list[BuildIngest]: ...
+
+
 class JenkinsMonitor:
     def __init__(
         self,
-        jenkins: JenkinsClient,
+        jenkins: JenkinsBuildSource,
         repository: BuildRepositoryPort,
         ingestion: IngestBuildUseCase,
         dispatcher: AnalysisDispatcher,

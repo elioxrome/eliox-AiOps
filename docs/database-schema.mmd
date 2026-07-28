@@ -1,0 +1,56 @@
+erDiagram
+    BUILDS ||--o{ KNOWN_ERRORS : "source_build_id"
+    KNOWN_ERRORS ||--o{ BUILDS : "matched_known_error_id"
+    BUILDS ||--o{ BUILD_CHAT_MESSAGES : "build_id"
+
+    BUILDS {
+        bigint id PK
+        text job_name "UNIQUE con build_number"
+        int build_number
+        text status
+        text build_url
+        text log
+        text processing_status
+        text category
+        text root_cause
+        double confidence
+        text recommendation
+        text affected_file
+        text error
+        int rating
+        text feedback_comment
+        bigint matched_known_error_id FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    MONITOR_STATE {
+        text job_name PK
+        int last_build_number
+        timestamptz updated_at
+    }
+
+    KNOWN_ERRORS {
+        bigint id PK
+        text signature
+        vector embedding "VECTOR(EMBEDDING_DIMENSIONS), índice hnsw"
+        text category
+        text root_cause
+        text recommendation
+        text affected_file
+        double confidence
+        double trust_score "default 1.0, rango 0..2"
+        int hit_count
+        timestamptz last_matched_at
+        bigint source_build_id FK
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    BUILD_CHAT_MESSAGES {
+        bigint id PK
+        bigint build_id FK
+        text role
+        text content
+        timestamptz created_at
+    }

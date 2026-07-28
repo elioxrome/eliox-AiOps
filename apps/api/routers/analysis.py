@@ -2,26 +2,26 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 
-from apps.api.dependencies import get_build_analyzer, get_settings
+from apps.api.dependencies import (
+    get_build_analyzer,
+    get_jenkins_client,
+    get_settings,
+)
 from src.application.errors import ExternalServiceError
 from src.application.models import BuildAnalysis
 from src.application.use_cases.analyze_build import AnalyzeBuildUseCase
 from src.config import Settings
 from src.infrastructure.jenkins.client import JenkinsClient
+from src.infrastructure.llm.base import BuildAnalyzer
 
 router = APIRouter(prefix="/analyze", tags=["analysis"])
 
 
 def get_analyze_build_use_case(
     settings: Annotated[Settings, Depends(get_settings)],
+    jenkins: Annotated[JenkinsClient, Depends(get_jenkins_client)],
+    llm: Annotated[BuildAnalyzer, Depends(get_build_analyzer)],
 ) -> AnalyzeBuildUseCase:
-    jenkins = JenkinsClient(
-        settings.jenkins_url,
-        settings.jenkins_username,
-        settings.jenkins_token,
-        settings.jenkins_timeout_seconds,
-    )
-    llm = get_build_analyzer()
     return AnalyzeBuildUseCase(jenkins, llm, settings.max_log_characters)
 
 

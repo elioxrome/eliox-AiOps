@@ -10,6 +10,8 @@ Devuelve únicamente un objeto JSON válido con exactamente estos campos:
 - "root_cause": explicación concisa basada en evidencias, en español
 - "confidence": número entre 0 y 1
 - "recommendation": siguiente acción concreta, en español
+- "affected_file": ruta o nombre del archivo donde ocurrió el fallo, si el
+  log lo menciona explícitamente; usa null si no hay evidencia clara
 
 LOG DE JENKINS:
 --- INICIO DEL LOG ---

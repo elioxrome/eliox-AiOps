@@ -24,6 +24,7 @@ class BuildAnalysis(BaseModel):
     root_cause: str = Field(min_length=1)
     confidence: float = Field(ge=0, le=1)
     recommendation: str = Field(min_length=1)
+    affected_file: str | None = None
 
 
 class HealthStatus(BaseModel):
@@ -64,6 +65,7 @@ class BuildRecord(BaseModel):
     root_cause: str | None
     confidence: float | None
     recommendation: str | None
+    affected_file: str | None
     error: str | None
     rating: int | None
     feedback_comment: str | None
@@ -79,6 +81,11 @@ class BuildFeedback(BaseModel):
 
 class BuildLogResponse(BaseModel):
     log: str
+
+
+class BuildFacets(BaseModel):
+    jobs: list[str]
+    categories: list[str]
 
 
 class ChatMessage(BaseModel):

@@ -65,18 +65,33 @@ services:
   frontend:
     build: .
     command:
-      - uvicorn
-      - frontend.main:app
-      - --host
-      - 0.0.0.0
-      - --port
+      - streamlit
+      - run
+      - frontend/app.py
+      - --server.port
       - "5000"
+      - --server.address
+      - 0.0.0.0
+      - --server.headless
+      - "true"
+      - --theme.base
+      - dark
+      - --theme.backgroundColor
+      - "#0b1020"
+      - --theme.secondaryBackgroundColor
+      - "#151c30"
+      - --theme.primaryColor
+      - "#60a5fa"
+      - --theme.textColor
+      - "#e7ecf5"
     ports:
       - "5000:5000"
     env_file:
       - .env
     environment:
       API_BASE_URL: ${DOCKER_API_BASE_URL:-http://api:8000}
+      API_REQUEST_TIMEOUT_SECONDS: ${API_REQUEST_TIMEOUT_SECONDS:-130}
+      PYTHONPATH: /app
     depends_on:
       api:
         condition: service_healthy
@@ -87,7 +102,7 @@ services:
           "python",
           "-c",
           "import urllib.request; \
-          urllib.request.urlopen('http://localhost:5000/health')",
+          urllib.request.urlopen('http://localhost:5000/_stcore/health')",
         ]
       interval: 10s
       timeout: 3s

@@ -3,6 +3,7 @@ from src.application.use_cases.chat_with_build import ChatWithBuildUseCase
 from src.application.use_cases.ingest_build import IngestBuildUseCase
 from src.config import Settings
 from src.infrastructure import bootstrap
+from src.infrastructure.jenkins.client import JenkinsClient
 from src.infrastructure.llm.base import BuildAnalyzer
 from src.infrastructure.persistence.build_repository import BuildRepository
 from src.infrastructure.persistence.known_error_repository import (
@@ -24,6 +25,10 @@ def get_known_error_repository() -> KnownErrorRepository:
 
 def get_build_analyzer() -> BuildAnalyzer:
     return bootstrap.get_build_analyzer()
+
+
+def get_jenkins_client() -> JenkinsClient:
+    return bootstrap.get_jenkins_client()
 
 
 def get_ingest_use_case() -> IngestBuildUseCase:

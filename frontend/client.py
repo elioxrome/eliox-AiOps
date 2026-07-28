@@ -1,3 +1,5 @@
+from datetime import date
+
 import requests
 
 
@@ -20,8 +22,30 @@ class BackendClient:
         self.timeout_seconds = timeout_seconds
         self.session = session or requests.Session()
 
-    def list_builds(self, limit: int) -> list[dict]:
-        return self._get("/api/builds", params={"limit": limit})
+    def list_builds(
+        self,
+        limit: int,
+        status: str | None = None,
+        job_name: str | None = None,
+        category: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[dict]:
+        params: dict[str, str | int] = {"limit": limit}
+        if status:
+            params["status"] = status
+        if job_name:
+            params["job_name"] = job_name
+        if category:
+            params["category"] = category
+        if date_from:
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            params["date_to"] = date_to.isoformat()
+        return self._get("/api/builds", params=params)
+
+    def get_facets(self) -> dict:
+        return self._get("/api/builds/facets")
 
     def get_build(self, build_id: int) -> dict | None:
         try:

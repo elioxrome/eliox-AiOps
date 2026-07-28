@@ -1,4 +1,5 @@
 import hmac
+from datetime import date
 from typing import Annotated
 
 from fastapi import (
@@ -18,6 +19,7 @@ from apps.api.dependencies import (
 )
 from src.application.models import (
     BuildAccepted,
+    BuildFacets,
     BuildFeedback,
     BuildIngest,
     BuildLogResponse,
@@ -75,8 +77,27 @@ def ingest_build(
 def list_builds(
     repository: Annotated[BuildRepository, Depends(get_repository)],
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    status_filter: Annotated[BuildStatus | None, Query(alias="status")] = None,
+    job_name: Annotated[str | None, Query(max_length=500)] = None,
+    category: Annotated[str | None, Query(max_length=200)] = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
 ) -> list[BuildRecord]:
-    return repository.list_recent(limit)
+    return repository.list_recent(
+        limit,
+        status=status_filter,
+        job_name=job_name,
+        category=category,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+@router.get("/facets", response_model=BuildFacets)
+def get_facets(
+    repository: Annotated[BuildRepository, Depends(get_repository)],
+) -> BuildFacets:
+    return repository.list_facets()
 
 
 @router.delete(
