@@ -14,7 +14,7 @@ flowchart TB
         Deps["dependencies.py"]
     end
 
-    Frontend["frontend/ (Streamlit, puerto 5000)<br/>dashboard_view.py + detail_view.py"]
+    Frontend["frontend/ (Streamlit, puerto 5000)<br/>dashboard_view.py + jobs_view.py + detail_view.py"]
 
     subgraph APP["Capa aplicación — src/application"]
         direction TB
@@ -115,7 +115,7 @@ endpoint de ingesta (un solo camino de análisis).
 ## Panel web (`frontend/`)
 
 App de Streamlit (puerto 5000) que consume la API HTTP vía `BackendClient`
-(`frontend/client.py`); nunca toca Postgres/Redis directamente. Dos vistas
+(`frontend/client.py`); nunca toca Postgres/Redis directamente. Cuatro vistas
 controladas por `st.session_state["view"]` en `frontend/app.py`:
 
 - **Dashboard** (`dashboard_view.py`): filtros por estado/job/categoría/fecha
@@ -124,13 +124,21 @@ controladas por `st.session_state["view"]` en `frontend/app.py`:
   `GET /api/builds/facets`). La lista de builds vive en un
   `@st.fragment(run_every="15s")`, así el auto-refresco solo repinta esa
   sección y no reinicia los filtros ni recarga la página completa.
+- **Jobs** y **detalle de job** (`jobs_view.py`): listado de jobs con
+  conteos de éxitos/fallos/otros (`GET /api/builds/jobs`, resuelto en
+  `BuildRepository.list_job_summaries`); al entrar a un job se listan sus
+  builds agrupadas en secciones Fallidos/Exitosos/Otros (`GET /api/builds`
+  filtrado por `job_name`), también dentro de un
+  `@st.fragment(run_every="15s")`.
 - **Detalle** (`detail_view.py`): panel de diagnóstico IA (confianza,
   categoría, causa raíz, archivo afectado, recomendación), log completo con
   resaltado de `ERROR`/`WARN`/`Exception`/`Caused by` (`log_highlight.py`,
   por línea, sin librería externa) y chat (`st.chat_message`/`st.chat_input`).
 
-La navegación entre vistas usa `st.query_params["build_id"]` para permitir
-enlazar directo al detalle de una build.
+Las tarjetas de build (`build_card.py`) se comparten entre el dashboard y el
+detalle de job para no duplicar el render ni la lógica de feedback (👍/👎).
+La navegación entre vistas usa `st.query_params["build_id"]`/`["job"]` para
+permitir enlazar directo al detalle de una build o de un job.
 
 ## Contratos
 

@@ -4,6 +4,7 @@ from frontend.client import BackendClient
 from frontend.config import FrontendSettings
 from frontend.dashboard_view import render_dashboard
 from frontend.detail_view import render_detail
+from frontend.jobs_view import render_job_detail, render_jobs
 
 st.set_page_config(page_title="Jenkins AIOps", page_icon="🛠️", layout="wide")
 
@@ -44,16 +45,25 @@ def main() -> None:
 
     if "view" not in st.session_state:
         query_build_id = st.query_params.get("build_id")
+        query_job = st.query_params.get("job")
         if query_build_id:
             st.session_state["view"] = "detail"
             st.session_state["selected_build_id"] = int(query_build_id)
+        elif query_job:
+            st.session_state["view"] = "job_detail"
+            st.session_state["selected_job_name"] = query_job
         else:
             st.session_state["view"] = "dashboard"
 
     client = get_backend_client()
+    view = st.session_state["view"]
 
-    if st.session_state["view"] == "detail":
+    if view == "detail":
         render_detail(client, st.session_state["selected_build_id"])
+    elif view == "jobs":
+        render_jobs(client)
+    elif view == "job_detail":
+        render_job_detail(client, st.session_state["selected_job_name"])
     else:
         render_dashboard(client)
 

@@ -22,8 +22,8 @@ sirve el panel web, incluido el chat sobre el log de una build.
   `src/infrastructure/bootstrap.py`.
 - `apps/api/routers/analysis.py`: endpoint legado `GET /analyze/{job}/{build}`.
 - `apps/api/routers/builds.py`: ingestión, consulta (con filtros
-  `status`/`job_name`/`category`/`date_from`/`date_to`), facets, log completo
-  y feedback de builds.
+  `status`/`job_name`/`category`/`date_from`/`date_to`), facets, resumen por
+  job (`GET /api/builds/jobs`), log completo y feedback de builds.
 - `apps/api/routers/chat.py`: chat sobre el log de una build.
 - `src/infrastructure/bootstrap.py`: wiring agnóstico de framework,
   compartido por el proceso de FastAPI y el worker de Celery; cada proceso
@@ -64,10 +64,12 @@ sirve el panel web, incluido el chat sobre el log de una build.
 - `migrations/`: migraciones Alembic (SQL crudo vía `op.execute()`), aplicadas
   automáticamente al arrancar el contenedor `api`.
 - `frontend/`: panel web independiente en Streamlit (`app.py` es el
-  entrypoint; `dashboard_view.py` y `detail_view.py` renderizan las vistas;
-  `nav.py` controla la navegación vía `st.session_state`/`st.query_params`;
-  `log_highlight.py` resalta `ERROR`/`WARN`/`Exception`/`Caused by`;
-  `client.py` habla con la API HTTP, nunca con Postgres/Redis directamente).
+  entrypoint; `dashboard_view.py`, `jobs_view.py` y `detail_view.py`
+  renderizan las vistas; `build_card.py` es la tarjeta de build compartida
+  entre dashboard y detalle de job; `nav.py` controla la navegación vía
+  `st.session_state`/`st.query_params`; `log_highlight.py` resalta
+  `ERROR`/`WARN`/`Exception`/`Caused by`; `client.py` habla con la API HTTP,
+  nunca con Postgres/Redis directamente).
 - `src/config.py`: única fuente de configuración por entorno.
 - `tests/`: pruebas unitarias sin servicios externos (Postgres+pgvector se
   levanta efímero vía `testcontainers` para las que sí tocan la base).

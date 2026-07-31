@@ -26,6 +26,7 @@ from src.application.models import (
     BuildRecord,
     BuildStatus,
     ClearBuildsResult,
+    JobSummary,
 )
 from src.application.use_cases.ingest_build import IngestBuildUseCase
 from src.config import Settings
@@ -98,6 +99,13 @@ def get_facets(
     repository: Annotated[BuildRepository, Depends(get_repository)],
 ) -> BuildFacets:
     return repository.list_facets()
+
+
+@router.get("/jobs", response_model=list[JobSummary])
+def get_job_summaries(
+    repository: Annotated[BuildRepository, Depends(get_repository)],
+) -> list[JobSummary]:
+    return repository.list_job_summaries()
 
 
 @router.delete(

@@ -47,6 +47,9 @@ class BackendClient:
     def get_facets(self) -> dict:
         return self._get("/api/builds/facets")
 
+    def get_job_summaries(self) -> list[dict]:
+        return self._get("/api/builds/jobs")
+
     def get_build(self, build_id: int) -> dict | None:
         try:
             return self._get(f"/api/builds/{build_id}")

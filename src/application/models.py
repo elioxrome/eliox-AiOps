@@ -88,6 +88,15 @@ class BuildFacets(BaseModel):
     categories: list[str]
 
 
+class JobSummary(BaseModel):
+    job_name: str
+    total_builds: int
+    success_count: int
+    failure_count: int
+    other_count: int
+    last_build_at: datetime
+
+
 class ChatMessage(BaseModel):
     role: str
     content: str = Field(min_length=1, max_length=4_000)

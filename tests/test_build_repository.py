@@ -107,3 +107,26 @@ def test_list_facets_returns_distinct_sorted_values(
 
     assert facets.jobs == ["alpha", "beta"]
     assert facets.categories == ["net"]
+
+
+def test_list_job_summaries_groups_counts_by_job(
+    repository: BuildRepository,
+) -> None:
+    _ingest(repository, "alpha", 1, BuildStatus.SUCCESS)
+    _ingest(repository, "alpha", 2, BuildStatus.FAILURE)
+    _ingest(repository, "alpha", 3, BuildStatus.UNSTABLE)
+    _ingest(repository, "beta", 1, BuildStatus.ABORTED)
+
+    summaries = {s.job_name: s for s in repository.list_job_summaries()}
+
+    alpha = summaries["alpha"]
+    assert alpha.total_builds == 3
+    assert alpha.success_count == 1
+    assert alpha.failure_count == 2
+    assert alpha.other_count == 0
+
+    beta = summaries["beta"]
+    assert beta.total_builds == 1
+    assert beta.success_count == 0
+    assert beta.failure_count == 0
+    assert beta.other_count == 1

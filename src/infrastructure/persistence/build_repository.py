@@ -10,6 +10,7 @@ from src.application.models import (
     BuildRecord,
     BuildStatus,
     ChatMessage,
+    JobSummary,
     ProcessingStatus,
 )
 
@@ -271,6 +272,38 @@ class BuildRepository:
             jobs=[row["job_name"] for row in jobs],
             categories=[row["category"] for row in categories],
         )
+
+    def list_job_summaries(self) -> list[JobSummary]:
+        with self.pool.connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT
+                    job_name,
+                    COUNT(*) AS total_builds,
+                    COUNT(*) FILTER (WHERE status = 'SUCCESS') AS success_count,
+                    COUNT(*) FILTER (
+                        WHERE status IN ('FAILURE', 'UNSTABLE')
+                    ) AS failure_count,
+                    COUNT(*) FILTER (
+                        WHERE status IN ('ABORTED', 'NOT_BUILT')
+                    ) AS other_count,
+                    MAX(created_at) AS last_build_at
+                FROM builds
+                GROUP BY job_name
+                ORDER BY job_name
+                """
+            ).fetchall()
+        return [
+            JobSummary(
+                job_name=row["job_name"],
+                total_builds=row["total_builds"],
+                success_count=row["success_count"],
+                failure_count=row["failure_count"],
+                other_count=row["other_count"],
+                last_build_at=row["last_build_at"],
+            )
+            for row in rows
+        ]
 
     def list_pending(self) -> list[tuple[int, BuildStatus]]:
         with self.pool.connection() as connection:
